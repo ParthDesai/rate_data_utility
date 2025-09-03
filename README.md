@@ -1,14 +1,45 @@
 # Rate Utility Microservice
 
-A Rust-based microservice that handles rating data transactions on the Solana blockchain.
+A Rust-based microservice that handles rating data transactions on the Solana blockchain with structured error handling and configuration file support.
 
 ## Features
 
 - **POST /rate** endpoint for processing rating data
+- Configuration file-based setup for Solana parameters
 - Fetches data link and user key from Solana transaction hash
 - Sends RateData transactions to Solana blockchain
-- Proper error handling and JSON responses
-- Environment-based private key configuration
+- Structured error responses with detailed information
+- Environment-based private key configuration for security
+- Comprehensive input validation and error handling
+
+## Configuration
+
+### Configuration File
+
+Create a `config.json` file with your Solana configuration:
+
+```json
+{
+  "rpc_url": "https://api.devnet.solana.com",
+  "program_id": "HkUDiDMSDntG1p4CgEaT9nhVrZ6MpPTVyL8rYiX3nvxy",
+  "token_mint": "6RNubhPChLts6fKh7nhac3ocDF4G1usv3dGw9akHXTEg"
+}
+```
+
+**Configuration Fields:**
+- `rpc_url`: Solana RPC endpoint URL (must start with http:// or https://)
+- `program_id`: Valid Solana program public key
+- `token_mint`: Valid Solana token mint public key
+
+All fields are required and validated at startup.
+
+### Environment Variables
+
+Set the following environment variable before running:
+
+```bash
+export AGENT_PRIVATE_KEY="your_solana_private_key_here"
+```
 
 ## API Specification
 
@@ -22,7 +53,7 @@ Processes rating data by fetching information from a Solana transaction and crea
 {
   "solana_tx_hash": "string",
   "rating": 0-100,
-  "synthetic_file_hash": "string",
+  "synthetic_file_hash": "string (optional)",
   "is_seed_file_deleted": boolean
 }
 ```
@@ -37,13 +68,62 @@ Processes rating data by fetching information from a Solana transaction and crea
 }
 ```
 
-#### Error Response (4xx/5xx)
+#### Error Responses
 
+The service now returns structured error responses with detailed information:
+
+**Validation Error (400 Bad Request)**
 ```json
 {
-  "error": "string"
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Validation failed for field 'rating'",
+    "details": {
+      "field": "rating",
+      "value": "150",
+      "constraint": "must be between 0 and 100"
+    }
+  }
 }
 ```
+
+**Solana Transaction Error (422 Unprocessable Entity)**
+```json
+{
+  "error": {
+    "code": "SOLANA_TRANSACTION_ERROR",
+    "message": "Transaction submission failed",
+    "details": {
+      "transaction_hash": null,
+      "raw_error": "InstructionError: Custom error 0x1234",
+      "logs": [
+        "Program log: Insufficient funds",
+        "Program log: Error processing instruction"
+      ]
+    }
+  }
+}
+```
+
+**Network Error (502 Bad Gateway)**
+```json
+{
+  "error": {
+    "code": "NETWORK_ERROR",
+    "message": "Failed to fetch transaction from RPC: Connection timeout",
+    "details": {
+      "endpoint": "https://api.devnet.solana.com",
+      "status_code": null,
+      "retry_after": null
+    }
+  }
+}
+```
+
+**Other Error Types:**
+- `SOLANA_DATA_FETCH_ERROR`: Issues fetching data from transactions
+- `KEYPAIR_ERROR`: Private key/keypair related issues  
+- `PROGRAM_ERROR`: Solana program client issues
 
 ## Setup and Running
 
@@ -52,22 +132,17 @@ Processes rating data by fetching information from a Solana transaction and crea
 - Rust 1.70+ 
 - Cargo
 
-### Environment Variables
-
-Set the following environment variable before running:
-
-```bash
-export PRIVATE_KEY="your_solana_private_key_here"
-```
-
 ### Running the Service
 
 ```bash
 # Build the project
 cargo build
 
-# Run the service (defaults to localhost:3000 for security)
+# Run with default config.json (defaults to localhost:3000 for security)
 cargo run
+
+# Run with custom config file
+cargo run -- --config /path/to/my-config.json
 
 # Run with custom port
 cargo run -- --port 8080
@@ -75,17 +150,19 @@ cargo run -- --port 8080
 # Run with custom address (still secure - localhost)
 cargo run -- --address 127.0.0.1 --port 8080
 
-# Run with custom Solana RPC URL
-cargo run -- --rpc-url https://api.mainnet-beta.solana.com
-
-# Run with custom RPC and port
-cargo run -- --rpc-url https://api.testnet.solana.com --port 8080
-
 # DANGEROUS: Run on public interface (requires explicit flag)
 cargo run -- --address 0.0.0.0 --port 3000 --allow-public
 ```
 
 **Default**: The service starts on `http://127.0.0.1:3000` for security
+
+### Command Line Options
+
+- `-p, --port <PORT>`: Port to listen on (default: 3000)
+- `-a, --address <ADDRESS>`: Address to bind to (default: 127.0.0.1)
+- `-c, --config <CONFIG>`: Path to configuration file (default: config.json)
+- `--allow-public`: Allow binding to public addresses (DANGEROUS - use with caution)
+- `-h, --help`: Print help information
 
 ### Testing the API
 
@@ -93,41 +170,14 @@ cargo run -- --address 0.0.0.0 --port 3000 --allow-public
 curl -X POST http://localhost:3000/rate \
   -H "Content-Type: application/json" \
   -d '{
-    "solana_tx_hash": "example_tx_hash_123",
+    "solana_tx_hash": "5KJp7z8QqJ9X2vN3mR4wL1cE6dF8gH2iJ3kL4mN5oP6qR7sT8uV9wX0yZ1aB2cD3eF4gH5iJ6kL7mN8oP9qR0sT",
     "rating": 85,
     "synthetic_file_hash": "file_hash_456",
     "is_seed_file_deleted": false
   }'
 ```
 
-## Implementation Notes
-
-### Placeholder Functions
-
-The following functions are currently implemented as placeholders and need to be replaced with actual Solana blockchain interactions:
-
-1. **`fetch_solana_data(tx_hash)`** in `src/solana_client.rs`
-   - Currently returns mock data based on the transaction hash
-   - Should implement actual Solana RPC calls to fetch transaction data
-   - Should extract data_link and user_key from the transaction
-
-2. **`send_rate_data_tx(private_key, input)`** in `src/solana_client.rs`
-   - Currently returns a mock transaction hash
-   - Should implement actual Solana transaction creation and submission
-   - Should create RateData instruction with provided parameters
-   - Should sign with the private key and submit to Solana network
-
-## Command Line Options
-
-The service supports the following CLI arguments:
-
-- `-p, --port <PORT>`: Port to listen on (default: 3000)
-- `-a, --address <ADDRESS>`: Address to bind to (default: 127.0.0.1)
-- `-r, --rpc-url <RPC_URL>`: Solana RPC URL to connect to (default: https://api.mainnet-beta.solana.com)
-- `--allow-public`: Allow binding to public addresses (DANGEROUS - use with caution)
-- `-h, --help`: Print help information
-
-### Security Features
+## Security Features
 
 🔒 **Public Address Protection**: The service automatically detects and prevents binding to public IP addresses unless explicitly overridden with `--allow-public`. This includes:
 
@@ -140,7 +190,35 @@ The service supports the following CLI arguments:
 - `10.x.x.x`, `172.16-31.x.x`, `192.168.x.x` (private IPv4)
 - `fc00::/7`, `fe80::/10` (private IPv6)
 
-### Dependencies
+🔐 **Configuration Security**:
+- Private key stored as environment variable (not in config file)
+- Configuration file validation at startup
+- All Solana public keys validated for correct format
+
+## Error Handling
+
+The service includes comprehensive structured error handling for:
+
+### Error Categories
+
+1. **Validation Errors**: Input validation failures with field-specific details
+2. **Solana Transaction Errors**: Transaction submission failures with logs and raw error details
+3. **Solana Data Fetch Errors**: Issues retrieving data from blockchain transactions
+4. **Network Errors**: RPC/network communication problems with endpoint information
+5. **Keypair Errors**: Private key/keypair related issues
+6. **Program Errors**: Solana program client configuration issues
+
+### HTTP Status Codes
+
+- `400 Bad Request`: Validation errors
+- `401 Unauthorized`: Keypair/authentication errors
+- `422 Unprocessable Entity`: Solana transaction errors
+- `502 Bad Gateway`: Network/RPC errors
+- `500 Internal Server Error`: Other system errors
+
+All errors include structured JSON responses with error codes, messages, and detailed context for debugging.
+
+## Dependencies
 
 The project uses the following key dependencies:
 
@@ -148,27 +226,45 @@ The project uses the following key dependencies:
 - **tokio**: Async runtime
 - **serde**: JSON serialization/deserialization
 - **tracing**: Logging and observability
-- **anyhow/thiserror**: Error handling
+- **anyhow**: Error handling
 - **clap**: Command line argument parsing
+- **anchor-client**: Solana blockchain interaction
+- **anchor-spl**: Solana Program Library integration
 
 ## Project Structure
 
 ```
 src/
-├── main.rs           # Server setup and routing
-├── handlers.rs       # API endpoint handlers
-├── models.rs         # Data structures and types
-└── solana_client.rs  # Solana blockchain interaction (placeholder)
+├── main.rs           # Server setup, configuration loading, and routing
+├── handlers.rs       # API endpoint handlers with structured error responses
+├── models.rs         # Data structures, error types, and response models
+└── solana_client.rs  # Solana blockchain interaction with comprehensive error handling
+config.json.example   # Example configuration file
+error_examples.json   # Example structured error responses
 ```
 
-## Error Handling
+## Development
 
-The service includes comprehensive error handling for:
+### Configuration File Example
 
-- Invalid input validation (rating range)
-- Solana data fetching failures
-- Transaction submission failures
-- JSON parsing errors
-- Network connectivity issues
+See `config.json.example` for the expected configuration format.
 
-All errors are returned as JSON with appropriate HTTP status codes.
+### Error Response Examples
+
+See `error_examples.json` for examples of all structured error response types.
+
+### Adding New Error Types
+
+1. Add new variant to `AppError` enum in `models.rs`
+2. Add corresponding `ErrorDetails` variant if needed
+3. Update `to_structured_error()` method
+4. Handle the new error type in handlers with appropriate HTTP status code
+
+## Logging
+
+The service uses structured logging with different levels:
+- `INFO`: Successful operations, configuration loading, server startup
+- `WARN`: Security warnings (public address binding)
+- `ERROR`: All error conditions with detailed context
+
+Logs include request IDs, transaction hashes, and error details for debugging and monitoring.
