@@ -1,0 +1,22 @@
+[package]
+name = "rate_utility"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1.0", features = ["full"] }
+axum = "0.7"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors"] }
+anyhow = "1.0"
+thiserror = "1.0"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+clap = { version = "4.0", features = ["derive"] }
+anchor-client = { version = "0.31.1", features = ["async"]}
+solana-transaction-status-client-types = { version = "2.3.4" }
+anchor-spl = { version = "0.31.1" }
+sync_contract = { version = "0.1.0", path = "../sync_contract/programs/sync_contract" }
+solana-rpc-client-api = { version = "2.3.7" }
