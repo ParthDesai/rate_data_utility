@@ -102,7 +102,7 @@ pub async fn rate_data_handler(
     // Step 4: Return success response
     let response = RateDataResponse {
         tx_hash,
-        data_link: solana_data.data_link,
+        seed_data_id: solana_data.data_link,
         user_key: solana_data.user_key.to_string(),
     };
 

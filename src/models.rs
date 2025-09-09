@@ -21,7 +21,7 @@ pub struct RateDataRequest {
 #[derive(Serialize)]
 pub struct RateDataResponse {
     pub tx_hash: String,
-    pub data_link: String,
+    pub seed_data_id: String,
     pub user_key: String,
 }
 
