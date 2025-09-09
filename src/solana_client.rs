@@ -30,13 +30,13 @@ use tracing::{info, warn};
 pub async fn fetch_solana_data(
     rpc_client: &RpcClient,
     program_id: Pubkey,
-    tx_hash: &str,
+    submit_data_tx_hash: &str,
 ) -> Result<SolanaData, AppError> {
-    info!("Fetching Solana data for tx hash: {}", tx_hash);
+    info!("Fetching Solana data for tx hash: {}", submit_data_tx_hash);
 
-    let signature = Signature::from_str(&tx_hash).map_err(|e| AppError::SolanaDataFetchError {
+    let signature = Signature::from_str(&submit_data_tx_hash).map_err(|e| AppError::SolanaDataFetchError {
         message: format!("Invalid transaction hash format: {}", e),
-        transaction_hash: tx_hash.to_string(),
+        transaction_hash: submit_data_tx_hash.to_string(),
     })?;
 
     let tx = rpc_client
@@ -54,7 +54,7 @@ pub async fn fetch_solana_data(
         if let Some(err) = &meta.err {
             return Err(AppError::SolanaDataFetchError {
                 message: format!("Transaction failed with error: {:?}", err),
-                transaction_hash: tx_hash.to_string(),
+                transaction_hash: submit_data_tx_hash.to_string(),
             });
         }
     }
@@ -67,14 +67,14 @@ pub async fn fetch_solana_data(
                 )
                 .map_err(|e| AppError::SolanaDataFetchError {
                     message: format!("Invalid program ID in transaction: {}", e),
-                    transaction_hash: tx_hash.to_string(),
+                    transaction_hash: submit_data_tx_hash.to_string(),
                 })?;
                 if instruction_program_id == program_id {
                     let binary_instruction_data = bs58::decode(&instruction.data)
                         .into_vec()
                         .map_err(|e| AppError::SolanaDataFetchError {
                             message: format!("Failed to decode instruction data: {}", e),
-                            transaction_hash: tx_hash.to_string(),
+                            transaction_hash: submit_data_tx_hash.to_string(),
                         })?;
 
                     let instruction_discriminator: &[u8] = &binary_instruction_data[0..8];
@@ -89,7 +89,7 @@ pub async fn fetch_solana_data(
                                 Pubkey::from_str(&data_submission_account_key.as_str()).map_err(
                                     |e| AppError::SolanaDataFetchError {
                                         message: format!("Invalid account key: {}", e),
-                                        transaction_hash: tx_hash.to_string(),
+                                        transaction_hash: submit_data_tx_hash.to_string(),
                                     },
                                 )?;
 
@@ -110,14 +110,14 @@ pub async fn fetch_solana_data(
                                         "Failed to deserialize data submission: {}",
                                         e
                                     ),
-                                    transaction_hash: tx_hash.to_string(),
+                                    transaction_hash: submit_data_tx_hash.to_string(),
                                 }
                             })?;
 
                             let data_link = String::from_utf8(data_submission.data_link().to_vec())
                                 .map_err(|e| AppError::SolanaDataFetchError {
                                     message: format!("Invalid UTF-8 in data link: {}", e),
-                                    transaction_hash: tx_hash.to_string(),
+                                    transaction_hash: submit_data_tx_hash.to_string(),
                                 })?
                                 .trim_end_matches('\0')
                                 .to_string();
@@ -136,7 +136,7 @@ pub async fn fetch_solana_data(
 
     Err(AppError::SolanaDataFetchError {
         message: "Unable to find data submission instruction in transaction".to_string(),
-        transaction_hash: tx_hash.to_string(),
+        transaction_hash: submit_data_tx_hash.to_string(),
     })
 }
 

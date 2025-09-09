@@ -20,7 +20,7 @@ pub async fn rate_data_handler(
 ) -> Result<Json<RateDataResponse>, (StatusCode, Json<ErrorResponse>)> {
     info!(
         "Received rate data request for tx hash: {}",
-        request.solana_tx_hash
+        request.submit_data_tx_hash
     );
 
     // Validate rating is within valid range (0-255 for u8)
@@ -34,6 +34,7 @@ pub async fn rate_data_handler(
         return Err((
             StatusCode::BAD_REQUEST,
             Json(ErrorResponse {
+                submit_data_tx_hash: request.submit_data_tx_hash.to_string(),
                 error: app_error.to_structured_error(),
             }),
         ));
@@ -43,7 +44,7 @@ pub async fn rate_data_handler(
 
     // Step 1: Fetch data link and user key from Solana transaction hash
     let solana_data =
-        match fetch_solana_data(&rpc_client, app_state.program_id, &request.solana_tx_hash).await {
+        match fetch_solana_data(&rpc_client, app_state.program_id, &request.submit_data_tx_hash).await {
             Ok(data) => data,
             Err(app_error) => {
                 error!("Failed to fetch Solana data: {:?}", app_error);
@@ -55,6 +56,7 @@ pub async fn rate_data_handler(
                 return Err((
                     status_code,
                     Json(ErrorResponse {
+                        submit_data_tx_hash: request.submit_data_tx_hash.clone(),
                         error: app_error.to_structured_error(),
                     }),
                 ));
@@ -93,6 +95,7 @@ pub async fn rate_data_handler(
             return Err((
                 status_code,
                 Json(ErrorResponse {
+                    submit_data_tx_hash: request.submit_data_tx_hash.clone(),
                     error: app_error.to_structured_error(),
                 }),
             ));
@@ -101,7 +104,8 @@ pub async fn rate_data_handler(
 
     // Step 4: Return success response
     let response = RateDataResponse {
-        tx_hash,
+        submit_data_tx_hash: request.submit_data_tx_hash,
+        rate_data_tx_hash: tx_hash,
         seed_data_id: solana_data.data_link,
         user_key: solana_data.user_key.to_string(),
     };

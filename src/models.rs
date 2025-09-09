@@ -12,7 +12,7 @@ pub struct AppState {
 
 #[derive(Deserialize)]
 pub struct RateDataRequest {
-    pub solana_tx_hash: String,
+    pub submit_data_tx_hash: String,
     pub rating: u8,
     pub synthetic_file_hash: Option<String>,
     pub is_seed_file_deleted: bool,
@@ -20,13 +20,15 @@ pub struct RateDataRequest {
 
 #[derive(Serialize)]
 pub struct RateDataResponse {
-    pub tx_hash: String,
+    pub submit_data_tx_hash: String,
+    pub rate_data_tx_hash: String,
     pub seed_data_id: String,
     pub user_key: String,
 }
 
 #[derive(Serialize)]
 pub struct ErrorResponse {
+    pub submit_data_tx_hash: String,
     pub error: StructuredError,
 }
 
