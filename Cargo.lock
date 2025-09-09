@@ -6326,6 +6326,7 @@ dependencies = [
 [[package]]
 name = "sync_contract"
 version = "0.1.0"
+source = "git+https://github.com/ParthDesai/sync_contract?branch=main#3c36900709ab832ca6548820020fe986e98883bd"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
