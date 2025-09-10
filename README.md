@@ -122,26 +122,46 @@ If the health check fails (e.g., unable to fetch balance or parse private key):
 
 Processes rating data by fetching information from a Solana transaction and creating a new RateData transaction.
 
+#### Processing Flow
+
+1. **Validates** the rating value (must be 0-100)
+2. **Fetches** data link and user key from the provided submit data transaction hash
+3. **Creates** a RateData transaction with the rating and file information
+4. **Returns** both the original submit data transaction hash and the new rate data transaction hash
+
 #### Request Body
 
 ```json
 {
-  "solana_tx_hash": "string",
+  "submit_data_tx_hash": "string",
   "rating": 0-100,
   "synthetic_file_hash": "string (optional)",
   "is_seed_file_deleted": boolean
 }
 ```
 
+**Field Descriptions:**
+- `submit_data_tx_hash`: The Solana transaction hash of the original data submission
+- `rating`: Rating value between 0 and 100 (inclusive)
+- `synthetic_file_hash`: Optional hash of synthetic file data
+- `is_seed_file_deleted`: Boolean indicating if the seed file was deleted
+
 #### Success Response (200 OK)
 
 ```json
 {
-  "tx_hash": "string",
-  "data_link": "string", 
+  "submit_data_tx_hash": "string",
+  "rate_data_tx_hash": "string",
+  "seed_data_id": "string",
   "user_key": "string"
 }
 ```
+
+**Response Fields:**
+- `submit_data_tx_hash`: The original submit data transaction hash from the request
+- `rate_data_tx_hash`: The new transaction hash for the rating data submission
+- `seed_data_id`: The data link/ID extracted from the original transaction
+- `user_key`: The user's public key extracted from the original transaction
 
 #### Error Responses
 
@@ -150,6 +170,7 @@ The service now returns structured error responses with detailed information:
 **Validation Error (400 Bad Request)**
 ```json
 {
+  "submit_data_tx_hash": "5KJp7z8QqJ9X2vN3mR4wL1cE6dF8gH2iJ3kL4mN5oP6qR7sT8uV9wX0yZ1aB2cD3eF4gH5iJ6kL7mN8oP9qR0sT",
   "error": {
     "code": "VALIDATION_ERROR",
     "message": "Validation failed for field 'rating'",
@@ -162,9 +183,26 @@ The service now returns structured error responses with detailed information:
 }
 ```
 
+**Solana Data Fetch Error (500 Internal Server Error)**
+```json
+{
+  "submit_data_tx_hash": "5KJp7z8QqJ9X2vN3mR4wL1cE6dF8gH2iJ3kL4mN5oP6qR7sT8uV9wX0yZ1aB2cD3eF4gH5iJ6kL7mN8oP9qR0sT",
+  "error": {
+    "code": "SOLANA_DATA_FETCH_ERROR",
+    "message": "Unable to find data submission instruction in transaction",
+    "details": {
+      "transaction_hash": "5KJp7z8QqJ9X2vN3mR4wL1cE6dF8gH2iJ3kL4mN5oP6qR7sT8uV9wX0yZ1aB2cD3eF4gH5iJ6kL7mN8oP9qR0sT",
+      "raw_error": null,
+      "logs": null
+    }
+  }
+}
+```
+
 **Solana Transaction Error (422 Unprocessable Entity)**
 ```json
 {
+  "submit_data_tx_hash": "5KJp7z8QqJ9X2vN3mR4wL1cE6dF8gH2iJ3kL4mN5oP6qR7sT8uV9wX0yZ1aB2cD3eF4gH5iJ6kL7mN8oP9qR0sT",
   "error": {
     "code": "SOLANA_TRANSACTION_ERROR",
     "message": "Transaction submission failed",
@@ -183,6 +221,7 @@ The service now returns structured error responses with detailed information:
 **Network Error (502 Bad Gateway)**
 ```json
 {
+  "submit_data_tx_hash": "5KJp7z8QqJ9X2vN3mR4wL1cE6dF8gH2iJ3kL4mN5oP6qR7sT8uV9wX0yZ1aB2cD3eF4gH5iJ6kL7mN8oP9qR0sT",
   "error": {
     "code": "NETWORK_ERROR",
     "message": "Failed to fetch transaction from RPC: Connection timeout",
@@ -211,22 +250,19 @@ The service now returns structured error responses with detailed information:
 
 ```bash
 # Build the project
-cargo build
-
-# Run with default config.json (defaults to localhost:3000 for security)
-cargo run
+cargo build --release
 
 # Run with custom config file
-cargo run -- --config /path/to/my-config.json
+./target/release/rate_utility --config /path/to/my-config.json
 
 # Run with custom port
-cargo run -- --port 8080
+./target/release/rate_utility --port 8080
 
 # Run with custom address (still secure - localhost)
-cargo run -- --address 127.0.0.1 --port 8080
+./target/release/rate_utility --address 127.0.0.1 --port 8080
 
 # DANGEROUS: Run on public interface (requires explicit flag)
-cargo run -- --address 0.0.0.0 --port 3000 --allow-public
+./target/release/rate_utility --address 0.0.0.0 --port 3000 --allow-public
 ```
 
 **Default**: The service starts on `http://127.0.0.1:3000` for security
@@ -254,11 +290,21 @@ curl http://localhost:3000/health
 curl -X POST http://localhost:3000/rate \
   -H "Content-Type: application/json" \
   -d '{
-    "solana_tx_hash": "5KJp7z8QqJ9X2vN3mR4wL1cE6dF8gH2iJ3kL4mN5oP6qR7sT8uV9wX0yZ1aB2cD3eF4gH5iJ6kL7mN8oP9qR0sT",
+    "submit_data_tx_hash": "5KJp7z8QqJ9X2vN3mR4wL1cE6dF8gH2iJ3kL4mN5oP6qR7sT8uV9wX0yZ1aB2cD3eF4gH5iJ6kL7mN8oP9qR0sT",
     "rating": 85,
     "synthetic_file_hash": "file_hash_456",
     "is_seed_file_deleted": false
   }'
+```
+
+**Example Success Response:**
+```json
+{
+  "submit_data_tx_hash": "5KJp7z8QqJ9X2vN3mR4wL1cE6dF8gH2iJ3kL4mN5oP6qR7sT8uV9wX0yZ1aB2cD3eF4gH5iJ6kL7mN8oP9qR0sT",
+  "rate_data_tx_hash": "2Aj8Bk9Cl0Dm1En2Fo3Gp4Hq5Ir6Js7Kt8Lu9Mv0Nw1Ox2Py3Qz4Ra5Sb6Tc7Ud8Ve9Wf0Xg1Yh2Zi3",
+  "seed_data_id": "QmYjtig7VJQ6XsnUjqqJvj7QaMcCAwtrgNdahSiFofrE7o",
+  "user_key": "HkUDiDMSDntG1p4CgEaT9nhVrZ6MpPTVyL8rYiX3nvxy"
+}
 ```
 
 ## Security Features
