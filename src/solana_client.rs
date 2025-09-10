@@ -1,24 +1,23 @@
 use crate::models::{AppError, RateDataTxInput, SolanaData};
 use anchor_client::anchor_lang::prelude::System;
-use anchor_client::anchor_lang::{AccountDeserialize, AnchorDeserialize, Discriminator, Id};
+use anchor_client::anchor_lang::{AccountDeserialize, Discriminator, Id};
 use anchor_client::solana_client::nonblocking::rpc_client::RpcClient;
-use anchor_client::solana_client::pubsub_client::PubsubClientError;
 use anchor_client::solana_client::rpc_request::{RpcError, RpcResponseErrorData};
 use anchor_client::solana_sdk::commitment_config::CommitmentConfig;
 use anchor_client::solana_sdk::pubkey::Pubkey;
 use anchor_client::solana_sdk::signature::{Keypair, Signature, Signer};
 use anchor_client::solana_sdk::{bs58, keccak};
-use anchor_client::{Client, ClientError, Cluster, Program};
+use anchor_client::{Client, ClientError, Cluster};
 use anchor_spl::associated_token::spl_associated_token_account;
 use anchor_spl::token_2022::spl_token_2022;
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use solana_rpc_client_api::client_error::ErrorKind;
 use solana_transaction_status_client_types::{
     EncodedTransaction, UiMessage, UiTransactionEncoding,
 };
 use std::str::FromStr;
 use sync_contract::types::Datasubmission;
-use tracing::{info, warn};
+use tracing::info;
 
 /// Placeholder function to fetch data link and user key from Solana transaction hash
 ///
@@ -34,10 +33,11 @@ pub async fn fetch_solana_data(
 ) -> Result<SolanaData, AppError> {
     info!("Fetching Solana data for tx hash: {}", submit_data_tx_hash);
 
-    let signature = Signature::from_str(&submit_data_tx_hash).map_err(|e| AppError::SolanaDataFetchError {
-        message: format!("Invalid transaction hash format: {}", e),
-        transaction_hash: submit_data_tx_hash.to_string(),
-    })?;
+    let signature =
+        Signature::from_str(&submit_data_tx_hash).map_err(|e| AppError::SolanaDataFetchError {
+            message: format!("Invalid transaction hash format: {}", e),
+            transaction_hash: submit_data_tx_hash.to_string(),
+        })?;
 
     let tx = rpc_client
         .get_transaction(&signature, UiTransactionEncoding::Json)
@@ -301,12 +301,26 @@ fn extract_transaction_logs(error: &ClientError) -> Option<Vec<String>> {
     None
 }
 
-/// Helper function to extract instruction error from error
-fn extract_instruction_error(error: &anyhow::Error) -> Option<String> {
-    let error_str = error.to_string();
-    if error_str.contains("InstructionError") {
-        Some(error_str)
-    } else {
-        None
-    }
+/// Get the SOL balance of a given account
+pub async fn get_sol_balance(rpc_client: &RpcClient, pubkey: &Pubkey) -> Result<f64, AppError> {
+    let balance_lamports =
+        rpc_client
+            .get_balance(pubkey)
+            .await
+            .map_err(|e| AppError::NetworkError {
+                message: format!("Failed to fetch balance: {}", e),
+                endpoint: rpc_client.url().to_string(),
+                status_code: None,
+            })?;
+
+    // Convert lamports to SOL (1 SOL = 1,000,000,000 lamports)
+    let balance_sol = balance_lamports as f64 / 1_000_000_000.0;
+
+    Ok(balance_sol)
+}
+
+/// Get the public key from a private key string
+pub fn get_public_key_from_private_key(private_key: &str) -> Result<String, AppError> {
+    let keypair = load_keypair_from_private_key_string(private_key)?;
+    Ok(keypair.pubkey().to_string())
 }

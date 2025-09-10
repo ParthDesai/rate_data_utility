@@ -1,12 +1,15 @@
 use anchor_client::solana_client::nonblocking::rpc_client::RpcClient;
-use anchor_client::solana_sdk::pubkey::Pubkey;
 use axum::{extract::State, http::StatusCode, response::Json};
 use tracing::{error, info};
 
 use crate::models::{
-    AppError, AppState, ErrorResponse, RateDataRequest, RateDataResponse, RateDataTxInput,
+    AppError, AppState, ErrorResponse, HealthResponse, RateDataRequest, RateDataResponse,
+    RateDataTxInput,
 };
-use crate::solana_client::{fetch_solana_data, send_rate_data_tx};
+use crate::solana_client::{
+    fetch_solana_data, get_public_key_from_private_key, get_sol_balance, load_keypair_from_private_key_string, send_rate_data_tx,
+};
+use anchor_client::solana_sdk::signature::Signer;
 
 /// Handler for the POST /rate endpoint
 ///
@@ -43,25 +46,30 @@ pub async fn rate_data_handler(
     let rpc_client = RpcClient::new(app_state.rpc_url.clone());
 
     // Step 1: Fetch data link and user key from Solana transaction hash
-    let solana_data =
-        match fetch_solana_data(&rpc_client, app_state.program_id, &request.submit_data_tx_hash).await {
-            Ok(data) => data,
-            Err(app_error) => {
-                error!("Failed to fetch Solana data: {:?}", app_error);
-                let status_code = match &app_error {
-                    AppError::ValidationError { .. } => StatusCode::BAD_REQUEST,
-                    AppError::NetworkError { .. } => StatusCode::BAD_GATEWAY,
-                    _ => StatusCode::INTERNAL_SERVER_ERROR,
-                };
-                return Err((
-                    status_code,
-                    Json(ErrorResponse {
-                        submit_data_tx_hash: request.submit_data_tx_hash.clone(),
-                        error: app_error.to_structured_error(),
-                    }),
-                ));
-            }
-        };
+    let solana_data = match fetch_solana_data(
+        &rpc_client,
+        app_state.program_id,
+        &request.submit_data_tx_hash,
+    )
+    .await
+    {
+        Ok(data) => data,
+        Err(app_error) => {
+            error!("Failed to fetch Solana data: {:?}", app_error);
+            let status_code = match &app_error {
+                AppError::ValidationError { .. } => StatusCode::BAD_REQUEST,
+                AppError::NetworkError { .. } => StatusCode::BAD_GATEWAY,
+                _ => StatusCode::INTERNAL_SERVER_ERROR,
+            };
+            return Err((
+                status_code,
+                Json(ErrorResponse {
+                    submit_data_tx_hash: request.submit_data_tx_hash.clone(),
+                    error: app_error.to_structured_error(),
+                }),
+            ));
+        }
+    };
 
     // Step 2: Prepare RateData transaction input
     let rate_data_input = RateDataTxInput {
@@ -111,5 +119,81 @@ pub async fn rate_data_handler(
     };
 
     info!("Successfully processed rate data request");
+    Ok(Json(response))
+}
+
+/// Handler for the GET /health endpoint
+///
+/// This endpoint returns the health status, balance, and public key of the agent account.
+/// Health is "Ok" if balance >= 0.5 SOL, otherwise "NotOk".
+pub async fn health_handler(
+    State(app_state): State<AppState>,
+) -> Result<Json<HealthResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let rpc_client = RpcClient::new(app_state.rpc_url.clone());
+
+    // Get the public key from the private key for balance check
+    let agent_keypair = match load_keypair_from_private_key_string(&app_state.private_key) {
+        Ok(keypair) => keypair,
+        Err(app_error) => {
+            error!("Failed to load agent keypair for health check: {:?}", app_error);
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    submit_data_tx_hash: "N/A".to_string(),
+                    error: app_error.to_structured_error(),
+                }),
+            ));
+        }
+    };
+    let agent_pubkey = agent_keypair.pubkey();
+
+    let balance = match get_sol_balance(&rpc_client, &agent_pubkey).await {
+        Ok(balance) => balance,
+        Err(app_error) => {
+            error!("Failed to fetch balance for health check: {:?}", app_error);
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    submit_data_tx_hash: "N/A".to_string(),
+                    error: app_error.to_structured_error(),
+                }),
+            ));
+        }
+    };
+
+    let public_key = match get_public_key_from_private_key(&app_state.private_key) {
+        Ok(pubkey) => pubkey,
+        Err(app_error) => {
+            error!("Failed to get public key for health check: {:?}", app_error);
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    submit_data_tx_hash: "N/A".to_string(),
+                    error: app_error.to_structured_error(),
+                }),
+            ));
+        }
+    };
+
+    let health = if balance == 0.0 {
+        "NotOk"
+    } else {
+        if balance < 0.5 {
+            "Warning"
+        } else {
+            "Ok"
+        }
+    };
+
+    let response = HealthResponse {
+        health: health.to_string(),
+        balance,
+        public_key,
+    };
+
+    info!(
+        "Health check completed - Status: {}, Balance: {} SOL, Public Key: {}",
+        health, balance, response.public_key
+    );
     Ok(Json(response))
 }

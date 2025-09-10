@@ -1,8 +1,11 @@
 use anchor_client::solana_client::nonblocking::rpc_client::RpcClient;
 use anchor_client::solana_sdk::pubkey::Pubkey;
-use axum::{extract::State, http::StatusCode, response::Json, routing::post, Router};
+use axum::{
+    routing::{get, post},
+    Router,
+};
 use clap::Parser;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::env;
 use std::fs;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
@@ -15,8 +18,10 @@ mod handlers;
 mod models;
 mod solana_client;
 
-use handlers::rate_data_handler;
-use models::{AppState, ErrorResponse, RateDataRequest, RateDataResponse};
+use handlers::{health_handler, rate_data_handler};
+use models::AppState;
+use solana_client::{get_sol_balance, load_keypair_from_private_key_string};
+use anchor_client::solana_sdk::signature::Signer;
 
 #[derive(Deserialize, Debug)]
 struct Config {
@@ -160,6 +165,39 @@ async fn main() {
     info!("Program ID: {}", program_id);
     info!("Token Mint: {}", token_mint);
 
+    // Check agent balance on startup
+    let rpc_client = RpcClient::new(rpc_url.clone());
+    
+    // Get the public key from the private key for balance check
+    let agent_keypair = match load_keypair_from_private_key_string(&private_key) {
+        Ok(keypair) => keypair,
+        Err(e) => {
+            error!("Failed to load agent keypair: {:?}", e);
+            std::process::exit(1);
+        }
+    };
+    let agent_pubkey = agent_keypair.pubkey();
+    
+    let balance = match get_sol_balance(&rpc_client, &agent_pubkey).await {
+        Ok(balance) => balance,
+        Err(e) => {
+            error!("Failed to fetch agent {} balance: {:?}", agent_pubkey, e);
+            std::process::exit(1);
+        }
+    };
+
+    info!("Agent balance: {} SOL", balance);
+
+    if balance == 0.0 {
+        error!("AGENT_PRIVATE_KEY account {} has 0 balance. Cannot proceed.", agent_pubkey);
+        std::process::exit(1);
+    } else if balance < 0.5 {
+        warn!(
+            "WARNING: Agent {} balance ({} SOL) is less than 0.5 SOL. Consider topping up.",
+            agent_pubkey, balance
+        );
+    }
+
     // Create application state
     let app_state = AppState {
         private_key,
@@ -171,6 +209,7 @@ async fn main() {
     // Build our application with routes
     let app = Router::new()
         .route("/rate", post(rate_data_handler))
+        .route("/health", get(health_handler))
         .layer(CorsLayer::permissive())
         .with_state(app_state);
 

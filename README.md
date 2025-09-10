@@ -5,12 +5,14 @@ A Rust-based microservice that handles rating data transactions on the Solana bl
 ## Features
 
 - **POST /rate** endpoint for processing rating data
+- **GET /health** endpoint for service health monitoring with agent balance and status
 - Configuration file-based setup for Solana parameters
 - Fetches data link and user key from Solana transaction hash
 - Sends RateData transactions to Solana blockchain
 - Structured error responses with detailed information
 - Environment-based private key configuration for security
 - Comprehensive input validation and error handling
+- Agent balance monitoring with startup validation
 
 ## Configuration
 
@@ -41,7 +43,80 @@ Set the following environment variable before running:
 export AGENT_PRIVATE_KEY="your_solana_private_key_here"
 ```
 
+**Important**: The service validates the agent account balance on startup:
+- **Exits with error** if balance is 0 SOL (cannot proceed)
+- **Shows warning** if balance is < 0.5 SOL (continues but recommends topping up)
+- **Continues normally** if balance is >= 0.5 SOL
+
 ## API Specification
+
+### GET /health
+
+Health monitoring endpoint that returns the service status, agent account balance, and public key.
+
+#### Response (200 OK)
+
+```json
+{
+  "health": "Ok|Warning|NotOk",
+  "balance": 1.5,
+  "public_key": "HkUDiDMSDntG1p4CgEaT9nhVrZ6MpPTVyL8rYiX3nvxy"
+}
+```
+
+#### Health Status Logic
+
+- **"Ok"**: Agent balance >= 0.5 SOL
+- **"Warning"**: Agent balance > 0 but < 0.5 SOL  
+- **"NotOk"**: Agent balance = 0 SOL
+
+#### Example Responses
+
+**Healthy Service (>= 0.5 SOL)**
+```json
+{
+  "health": "Ok",
+  "balance": 2.5,
+  "public_key": "HkUDiDMSDntG1p4CgEaT9nhVrZ6MpPTVyL8rYiX3nvxy"
+}
+```
+
+**Warning State (< 0.5 SOL)**
+```json
+{
+  "health": "Warning", 
+  "balance": 0.25,
+  "public_key": "HkUDiDMSDntG1p4CgEaT9nhVrZ6MpPTVyL8rYiX3nvxy"
+}
+```
+
+**Critical State (0 SOL)**
+```json
+{
+  "health": "NotOk",
+  "balance": 0.0,
+  "public_key": "HkUDiDMSDntG1p4CgEaT9nhVrZ6MpPTVyL8rYiX3nvxy"
+}
+```
+
+#### Error Response (500 Internal Server Error)
+
+If the health check fails (e.g., unable to fetch balance or parse private key):
+
+```json
+{
+  "submit_data_tx_hash": "N/A",
+  "error": {
+    "code": "NETWORK_ERROR",
+    "message": "Failed to fetch balance: Connection timeout",
+    "details": {
+      "endpoint": "https://api.devnet.solana.com",
+      "status_code": null,
+      "retry_after": null
+    }
+  }
+}
+```
 
 ### POST /rate
 
@@ -166,6 +241,15 @@ cargo run -- --address 0.0.0.0 --port 3000 --allow-public
 
 ### Testing the API
 
+#### Health Check
+
+```bash
+# Check service health and agent balance
+curl http://localhost:3000/health
+```
+
+#### Rate Data Processing
+
 ```bash
 curl -X POST http://localhost:3000/rate \
   -H "Content-Type: application/json" \
@@ -263,8 +347,17 @@ See `error_examples.json` for examples of all structured error response types.
 ## Logging
 
 The service uses structured logging with different levels:
-- `INFO`: Successful operations, configuration loading, server startup
-- `WARN`: Security warnings (public address binding)
-- `ERROR`: All error conditions with detailed context
+- `INFO`: Successful operations, configuration loading, server startup, health checks, agent balance monitoring
+- `WARN`: Security warnings (public address binding), low balance warnings (< 0.5 SOL)
+- `ERROR`: All error conditions with detailed context, zero balance errors
 
-Logs include request IDs, transaction hashes, and error details for debugging and monitoring.
+Logs include request IDs, transaction hashes, agent public keys, balance information, and error details for debugging and monitoring.
+
+### Example Log Output
+
+```
+INFO rate_utility: Agent balance: 1.5 SOL
+INFO rate_utility: Server running on http://127.0.0.1:3000
+INFO rate_utility: Health check completed - Status: Ok, Balance: 1.5 SOL, Public Key: HkUDiDMSDntG1p4CgEaT9nhVrZ6MpPTVyL8rYiX3nvxy
+WARN rate_utility: WARNING: Agent HkUDiDMSDntG1p4CgEaT9nhVrZ6MpPTVyL8rYiX3nvxy balance (0.25 SOL) is less than 0.5 SOL. Consider topping up.
+```

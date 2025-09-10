@@ -168,6 +168,13 @@ pub struct SolanaData {
     pub user_key: Pubkey,
 }
 
+#[derive(Serialize)]
+pub struct HealthResponse {
+    pub health: String,
+    pub balance: f64,
+    pub public_key: String,
+}
+
 #[derive(Debug)]
 pub struct RateDataTxInput {
     pub token_mint: Pubkey,
