@@ -8,6 +8,7 @@ pub struct AppState {
     pub rpc_url: String,
     pub program_id: Pubkey,
     pub token_mint: Pubkey,
+    pub max_retries: u32,
 }
 
 #[derive(Deserialize)]

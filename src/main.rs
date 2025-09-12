@@ -18,16 +18,22 @@ mod handlers;
 mod models;
 mod solana_client;
 
+use anchor_client::solana_sdk::signature::Signer;
 use handlers::{health_handler, rate_data_handler};
 use models::AppState;
 use solana_client::{get_sol_balance, load_keypair_from_private_key_string};
-use anchor_client::solana_sdk::signature::Signer;
 
 #[derive(Deserialize, Debug)]
 struct Config {
     rpc_url: String,
     program_id: String,
     token_mint: String,
+    #[serde(default = "default_max_retries")]
+    max_retries: u32,
+}
+
+fn default_max_retries() -> u32 {
+    3
 }
 
 #[derive(Parser)]
@@ -87,7 +93,7 @@ fn is_public_binding_address(addr: &str) -> bool {
 }
 
 /// Load and validate configuration from file
-fn load_config(config_path: &str) -> Result<(String, Pubkey, Pubkey), String> {
+fn load_config(config_path: &str) -> Result<(String, Pubkey, Pubkey, u32), String> {
     // Check if config file exists
     if !Path::new(config_path).exists() {
         return Err(format!("Configuration file '{}' not found", config_path));
@@ -116,7 +122,7 @@ fn load_config(config_path: &str) -> Result<(String, Pubkey, Pubkey), String> {
         ));
     }
 
-    Ok((config.rpc_url, program_id, token_mint))
+    Ok((config.rpc_url, program_id, token_mint, config.max_retries))
 }
 
 #[tokio::main]
@@ -152,7 +158,7 @@ async fn main() {
         env::var("AGENT_PRIVATE_KEY").expect("AGENT_PRIVATE_KEY environment variable must be set");
 
     // Load and validate configuration
-    let (rpc_url, program_id, token_mint) = match load_config(&args.config) {
+    let (rpc_url, program_id, token_mint, max_retries) = match load_config(&args.config) {
         Ok(config) => config,
         Err(e) => {
             error!("Configuration error: {}", e);
@@ -167,7 +173,7 @@ async fn main() {
 
     // Check agent balance on startup
     let rpc_client = RpcClient::new(rpc_url.clone());
-    
+
     // Get the public key from the private key for balance check
     let agent_keypair = match load_keypair_from_private_key_string(&private_key) {
         Ok(keypair) => keypair,
@@ -177,7 +183,7 @@ async fn main() {
         }
     };
     let agent_pubkey = agent_keypair.pubkey();
-    
+
     let balance = match get_sol_balance(&rpc_client, &agent_pubkey).await {
         Ok(balance) => balance,
         Err(e) => {
@@ -189,7 +195,10 @@ async fn main() {
     info!("Agent balance: {} SOL", balance);
 
     if balance == 0.0 {
-        error!("AGENT_PRIVATE_KEY account {} has 0 balance. Cannot proceed.", agent_pubkey);
+        error!(
+            "AGENT_PRIVATE_KEY account {} has 0 balance. Cannot proceed.",
+            agent_pubkey
+        );
         std::process::exit(1);
     } else if balance < 0.5 {
         warn!(
@@ -204,6 +213,7 @@ async fn main() {
         rpc_url: rpc_url.clone(),
         program_id,
         token_mint,
+        max_retries,
     };
 
     // Build our application with routes

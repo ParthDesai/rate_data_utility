@@ -1,5 +1,6 @@
 {
   "rpc_url": "https://api.devnet.solana.com",
   "program_id": "HkUDiDMSDntG1p4CgEaT9nhVrZ6MpPTVyL8rYiX3nvxy",
-  "token_mint": "6RNubhPChLts6fKh7nhac3ocDF4G1usv3dGw9akHXTEg"
+  "token_mint": "6RNubhPChLts6fKh7nhac3ocDF4G1usv3dGw9akHXTEg",
+  "max_retries": 3
 }

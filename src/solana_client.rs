@@ -12,17 +12,71 @@ use anchor_spl::associated_token::spl_associated_token_account;
 use anchor_spl::token_2022::spl_token_2022;
 use anyhow::Result;
 use solana_rpc_client_api::client_error::ErrorKind;
+use solana_transaction_status_client_types::EncodedConfirmedTransactionWithStatusMeta;
 use solana_transaction_status_client_types::{
     EncodedTransaction, UiMessage, UiTransactionEncoding,
 };
 use std::str::FromStr;
+use std::time::Duration;
 use sync_contract::types::Datasubmission;
-use tracing::info;
+use tokio::time::sleep;
+use tracing::{info, warn};
+
+async fn get_transaction_with_retries(
+    rpc_client: &RpcClient,
+    signature: &Signature,
+    max_retries: u32,
+) -> Result<EncodedConfirmedTransactionWithStatusMeta, AppError> {
+    let mut last_error;
+    let mut attempt = 0;
+    loop {
+        match rpc_client
+            .get_transaction(&signature, UiTransactionEncoding::Json)
+            .await
+        {
+            Ok(transaction) => break Ok(transaction),
+            Err(e) => {
+                last_error = Some(e);
+                if attempt < max_retries {
+                    let delay = Duration::from_millis(1000 * (attempt + 1) as u64); // Exponential backoff: 1s, 2s, 3s...
+                    warn!(
+                        "Failed to fetch transaction (in an attempt {}/{}): {}. Retrying in {:?}...",
+                        attempt + 1,
+                        max_retries + 1,
+                        last_error.as_ref().unwrap(),
+                        delay
+                    );
+                    attempt += 1;
+                    sleep(delay).await;
+                } else {
+                    warn!(
+                        "Failed to fetch transaction (in an attempt {}/{}): {}",
+                        attempt + 1,
+                        max_retries + 1,
+                        last_error.as_ref().unwrap()
+                    );
+                    break Err(AppError::NetworkError {
+                        message: format!(
+                            "Failed to fetch transaction from RPC after {} attempts: {}",
+                            attempt + 1,
+                            last_error.unwrap()
+                        ),
+                        endpoint: rpc_client.url().to_string(),
+                        status_code: None,
+                    });
+                }
+            }
+        }
+    }
+}
 
 /// Placeholder function to fetch data link and user key from Solana transaction hash
 ///
 /// # Arguments
-/// * `tx_hash` - The Solana transaction hash as a string
+/// * `rpc_client` - The RPC client for Solana network
+/// * `program_id` - The program ID to match against
+/// * `submit_data_tx_hash` - The Solana transaction hash as a string
+/// * `max_retries` - Maximum number of retry attempts for network calls
 ///
 /// # Returns
 /// * `Result<SolanaData>` - Contains data_link and user_key on success
@@ -30,6 +84,7 @@ pub async fn fetch_solana_data(
     rpc_client: &RpcClient,
     program_id: Pubkey,
     submit_data_tx_hash: &str,
+    max_retries: u32,
 ) -> Result<SolanaData, AppError> {
     info!("Fetching Solana data for tx hash: {}", submit_data_tx_hash);
 
@@ -39,14 +94,7 @@ pub async fn fetch_solana_data(
             transaction_hash: submit_data_tx_hash.to_string(),
         })?;
 
-    let tx = rpc_client
-        .get_transaction(&signature, UiTransactionEncoding::Json)
-        .await
-        .map_err(|e| AppError::NetworkError {
-            message: format!("Failed to fetch transaction from RPC: {}", e),
-            endpoint: rpc_client.url().to_string(),
-            status_code: None,
-        })?;
+    let tx = get_transaction_with_retries(rpc_client, &signature, max_retries).await?;
 
     const DATA_SUBMISSION_ACCOUNT_INDEX_IN_SUBMIT_DATA: usize = 0;
 

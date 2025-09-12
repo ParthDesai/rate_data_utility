@@ -7,7 +7,8 @@ use crate::models::{
     RateDataTxInput,
 };
 use crate::solana_client::{
-    fetch_solana_data, get_public_key_from_private_key, get_sol_balance, load_keypair_from_private_key_string, send_rate_data_tx,
+    fetch_solana_data, get_public_key_from_private_key, get_sol_balance,
+    load_keypair_from_private_key_string, send_rate_data_tx,
 };
 use anchor_client::solana_sdk::signature::Signer;
 
@@ -50,6 +51,7 @@ pub async fn rate_data_handler(
         &rpc_client,
         app_state.program_id,
         &request.submit_data_tx_hash,
+        app_state.max_retries,
     )
     .await
     {
@@ -135,7 +137,10 @@ pub async fn health_handler(
     let agent_keypair = match load_keypair_from_private_key_string(&app_state.private_key) {
         Ok(keypair) => keypair,
         Err(app_error) => {
-            error!("Failed to load agent keypair for health check: {:?}", app_error);
+            error!(
+                "Failed to load agent keypair for health check: {:?}",
+                app_error
+            );
             return Err((
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorResponse {
